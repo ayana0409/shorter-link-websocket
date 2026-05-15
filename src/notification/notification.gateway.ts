@@ -18,28 +18,46 @@ export class NotificationGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
-  server: Server;
+  server!: Server;
 
   private readonly logger = new Logger(NotificationGateway.name);
 
-  /** Map userId -> Set of socket ids */
+  /** Map userId/username -> Set of socket ids */
   private userSockets: Map<string, Set<string>> = new Map();
 
   handleConnection(client: Socket) {
     const userId = client.handshake.query.userId as string;
+    const username = client.handshake.query.username as string;
+
     if (userId) {
       if (!this.userSockets.has(userId)) {
         this.userSockets.set(userId, new Set());
       }
       this.userSockets.get(userId)!.add(client.id);
       this.logger.log(`User ${userId} connected (socket ${client.id})`);
-    } else {
-      this.logger.warn(`Client ${client.id} connected without userId`);
+    }
+
+    if (username && username !== userId) {
+      if (!this.userSockets.has(username)) {
+        this.userSockets.set(username, new Set());
+      }
+      this.userSockets.get(username)!.add(client.id);
+      this.logger.log(
+        `User ${username} connected by username (socket ${client.id})`,
+      );
+    }
+
+    if (!userId && !username) {
+      this.logger.warn(
+        `Client ${client.id} connected without userId or username`,
+      );
     }
   }
 
   handleDisconnect(client: Socket) {
     const userId = client.handshake.query.userId as string;
+    const username = client.handshake.query.username as string;
+
     if (userId && this.userSockets.has(userId)) {
       this.userSockets.get(userId)!.delete(client.id);
       if (this.userSockets.get(userId)!.size === 0) {
@@ -47,11 +65,15 @@ export class NotificationGateway
       }
       this.logger.log(`User ${userId} disconnected (socket ${client.id})`);
     }
+
+    if (username && this.userSockets.has(username)) {
+      this.userSockets.get(username)!.delete(client.id);
+      if (this.userSockets.get(username)!.size === 0) {
+        this.userSockets.delete(username);
+      }
+    }
   }
 
-  /**
-   * Send a notification to a specific user
-   */
   sendToUser(userId: string, event: string, payload: any): boolean {
     const sockets = this.userSockets.get(userId);
     if (!sockets || sockets.size === 0) {
@@ -69,33 +91,21 @@ export class NotificationGateway
     return true;
   }
 
-  /**
-   * Send a notification to all connected users
-   */
   broadcast(event: string, payload: any): void {
     this.server.emit(event, payload);
     this.logger.debug(`Broadcast "${event}" to all connected clients`);
   }
 
-  /**
-   * Send to users in a specific room/group
-   */
   sendToRoom(room: string, event: string, payload: any): void {
     this.server.to(room).emit(event, payload);
     this.logger.debug(`Sent "${event}" to room ${room}`);
   }
 
-  /**
-   * Check if a user is currently connected
-   */
   isUserOnline(userId: string): boolean {
     const sockets = this.userSockets.get(userId);
     return !!sockets && sockets.size > 0;
   }
 
-  /**
-   * Get count of connected users
-   */
   getConnectedUserCount(): number {
     return this.userSockets.size;
   }
