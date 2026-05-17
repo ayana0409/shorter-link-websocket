@@ -1,98 +1,174 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# 🔗 Shorter Link — WebSocket Service
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+> WebSocket service cho hệ thống thông báo real-time, xây dựng trên NestJS với Socket.IO Gateway.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## 📋 Mục lục
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- [Tổng quan](#-tổng-quan)
+- [Kiến trúc](#-kiến-trúc)
+- [Công nghệ sử dụng](#-công-nghệ-sử-dụng)
+- [Chức năng](#-chức-năng)
+- [WebSocket Events](#-websocket-events)
+- [HTTP API Endpoints](#-http-api-endpoints)
+- [Related Repositories](#-related-repositories)
 
-## Project setup
+---
 
-```bash
-$ npm install
+## 🔭 Tổng quan
+
+**Shorter Link WebSocket** là service thông báo real-time, được xây dựng trên **NestJS** với **Socket.IO Gateway**. Service chạy độc lập, quản lý kết nối WebSocket với các client và hỗ trợ:
+
+- **Gửi thông báo đến người dùng cụ thể** (theo `userId` hoặc `username`)
+- **Broadcast** thông báo đến tất cả client đang kết nối
+- **Gửi theo room/group** — hỗ trợ phân nhóm người nhận
+- **Theo dõi trạng thái online** — kiểm tra user có đang kết nối không
+- **HTTP API** để trigger notification từ backend service
+
+---
+
+## 🏗 Kiến trúc
+
+```
+shorter-link-websocket/
+├── src/
+│   ├── notification/
+│   │   ├── notification.gateway.ts    # Socket.IO Gateway — quản lý kết nối & emit
+│   │   ├── notification.controller.ts  # HTTP API để trigger notification
+│   │   ├── notification.module.ts      # Module — global, export gateway
+│   │   └── index.ts                    # Barrel export
+│   ├── app.module.ts                   # Root module
+│   ├── app.controller.ts               # Health check endpoint
+│   ├── app.service.ts                  # App service
+│   └── main.ts                         # Bootstrap — CORS, port config
+├── package.json
+├── tsconfig.json
+├── tsconfig.build.json
+├── nest-cli.json
+└── eslint.config.mjs
 ```
 
-## Compile and run the project
+### Luồng hoạt động
 
-```bash
-# development
-$ npm run start
+```
+Client (FE)                          WebSocket Service
+    │                                     │
+    ├── connect (userId, username) ──────→ │  handleConnection()
+    │                                     │  → Lưu socket vào userSockets Map
+    │                                     │
+    │  ←── connect event ─────────────────┤
+    │                                     │
+    │  ←── {event, payload} ─────────────┤  sendToUser() / broadcast()
+    │                                     │
+    ├── disconnect ──────────────────────→ │  handleDisconnect()
+    │                                     │  → Xóa socket khỏi userSockets Map
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+Backend API                          WebSocket Service
+    │                                     │
+    ├── POST /notify/user ──────────────→ │  NotificationController
+    │   { userId, event, payload }        │  → gateway.sendToUser()
+    │                                     │
+    ├── POST /notify/broadcast ─────────→ │  NotificationController
+    │   { event, payload }                │  → gateway.broadcast()
+    │                                     │
+    ├── POST /notify/room ──────────────→ │  NotificationController
+    │   { room, event, payload }          │  → gateway.sendToRoom()
+    │                                     │
+    └── POST /notify/status ────────────→ │  NotificationController
+                                          │  → gateway.getConnectedUserCount()
 ```
 
-## Run tests
+---
+
+## 🛠 Công nghệ sử dụng
+
+| Công nghệ                      | Phiên bản                    | Mô tả                                 |
+| ------------------------------ | ---------------------------- | ------------------------------------- |
+| **NestJS**                     | ^11.0.1                      | Framework Node.js chính               |
+| **TypeScript**                 | ^5.7.3                       | Ngôn ngữ lập trình                    |
+| **Socket.IO**                  | ^4.8.3                       | Real-time bidirectional communication |
+| **@nestjs/websockets**         | ^11.1.21                     | NestJS WebSocket gateway adapter      |
+| **@nestjs/platform-socket.io** | ^11.1.21                     | Socket.IO platform integration        |
+| **Express**                    | via @nestjs/platform-express | HTTP server                           |
+| **rxjs**                       | ^7.8.1                       | Reactive programming                  |
+
+### Kỹ thuật & Patterns
+
+- **WebSocket Gateway** — `@WebSocketGateway` decorator với namespace `notifications`
+- **In-memory Socket Tracking** — `Map<string, Set<string>>` theo dõi userId/username → socket ids
+- **Dual Key Mapping** — Hỗ trợ cả `userId` (ObjectId) và `username` để tìm socket
+- **Global Module** — `NotificationModule` đánh dấu `@Global()` để inject gateway ở bất kỳ đâu
+  - **HTTP-to-WebSocket Bridge** — REST API để backend service trigger notification qua WebSocket
+
+---
+
+## 📦 Chức năng
+
+### 🔔 Gửi thông báo đến người dùng cụ thể
+
+- Gửi event + payload đến tất cả socket của một user (theo `userId` hoặc `username`)
+- Trả về `false` nếu user không online
+- Hỗ trợ nhiều socket đồng thời (nhiều tab / thiết bị)
+
+### 📢 Broadcast
+
+- Gửi event + payload đến **tất cả** client đang kết nối
+- Không phân biệt user — áp dụng cho thông báo toàn hệ thống
+
+### 🏠 Gửi theo Room
+
+- Gửi event + payload đến một room/group cụ thể
+- Client join room theo nhu cầu
+
+### 📊 Theo dõi trạng thái
+
+- **Kiểm tra user online** — `isUserOnline(userId)`
+- **Đếm số user đang kết nối** — `getConnectedUserCount()`
+- **Logging** — Log mọi kết nối / ngắt kết nối
+
+---
+
+## 🌐 HTTP API Endpoints
+
+Service cung cấp REST API để backend trigger notification:
+
+| Method | Endpoint            | Mô tả                | Body                         |
+| ------ | ------------------- | -------------------- | ---------------------------- |
+| POST   | `/notify/user`      | Gửi đến user cụ thể  | `{ userId, event, payload }` |
+| POST   | `/notify/broadcast` | Broadcast đến tất cả | `{ event, payload }`         |
+| POST   | `/notify/room`      | Gửi đến room         | `{ room, event, payload }`   |
+| POST   | `/notify/status`    | Xem số user online   | —                            |
+| GET    | `/`                 | Health check         | —                            |
+
+**Ví dụ gửi notification:**
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+curl -X POST http://localhost:3002/notify/user \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "64f...", "event": "link_created", "payload": {"shortUrl": "abc123"}}'
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+**Ví dụ broadcast:**
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+curl -X POST http://localhost:3002/notify/broadcast \
+  -H "Content-Type: application/json" \
+  -d '{"event": "system_maintenance", "payload": {"message": "Bảo trì lúc 2AM"}}'
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+---
 
-## Resources
+## 🔗 Related Repositories
 
-Check out a few resources that may come in handy when working with NestJS:
+| Repository                 | Mô tả                                  | Link                                                |
+| -------------------------- | -------------------------------------- | --------------------------------------------------- |
+| **shorter-link-api**       | Backend REST API (NestJS)              | https://github.com/ayana0409/shorter-link-api       |
+| **shorter-link-fe**        | Frontend (ReactJS)                     | https://github.com/ayana0409/shorter-link-fe        |
+| **shorter-link-websocket** | WebSocket service (NestJS + Socket.IO) | https://github.com/ayana0409/shorter-link-websocket |
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+---
 
-## Support
+## 📄 License
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+UNLICENSED — Private project.
