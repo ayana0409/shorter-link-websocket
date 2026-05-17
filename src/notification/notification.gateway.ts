@@ -81,9 +81,6 @@ export class NotificationGateway
   sendToUser(userId: string, event: string, payload: any): boolean {
     const sockets = this.userSockets.get(userId);
     if (!sockets || sockets.size === 0) {
-      this.logger.debug(
-        `User ${userId} is not connected, notification not sent`,
-      );
       return false;
     }
     sockets.forEach((socketId) => {
