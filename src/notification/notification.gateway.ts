@@ -74,6 +74,10 @@ export class NotificationGateway
     }
   }
 
+  /**
+   * Send a notification to a specific user.
+   * Returns true if user is online and message was sent.
+   */
   sendToUser(userId: string, event: string, payload: any): boolean {
     const sockets = this.userSockets.get(userId);
     if (!sockets || sockets.size === 0) {
@@ -91,6 +95,20 @@ export class NotificationGateway
     return true;
   }
 
+  /**
+   * Send a notification to multiple user IDs (tries each key).
+   * Returns true if at least one was online and received the message.
+   */
+  sendToAnyUser(userIds: string[], event: string, payload: any): boolean {
+    let sent = false;
+    for (const id of userIds) {
+      if (this.sendToUser(id, event, payload)) {
+        sent = true;
+      }
+    }
+    return sent;
+  }
+
   broadcast(event: string, payload: any): void {
     this.server.emit(event, payload);
     this.logger.debug(`Broadcast "${event}" to all connected clients`);
@@ -104,6 +122,13 @@ export class NotificationGateway
   isUserOnline(userId: string): boolean {
     const sockets = this.userSockets.get(userId);
     return !!sockets && sockets.size > 0;
+  }
+
+  /**
+   * Check if user is online by any of their IDs (userId or username)
+   */
+  isAnyUserOnline(userIds: string[]): boolean {
+    return userIds.some((id) => this.isUserOnline(id));
   }
 
   getConnectedUserCount(): number {
